@@ -31,6 +31,9 @@ import org.deeplearning4j.nn.modelimport.keras.exceptions.InvalidKerasConfigurat
 import org.deeplearning4j.nn.modelimport.keras.exceptions.UnsupportedKerasConfigurationException;
 import org.deeplearning4j.nn.modelimport.keras.layers.KerasInput;
 import org.deeplearning4j.nn.modelimport.keras.layers.KerasLoss;
+import org.deeplearning4j.nn.modelimport.keras.layers.core.KerasDense;
+import org.deeplearning4j.nn.modelimport.keras.layers.core.KerasStack;
+import org.deeplearning4j.nn.modelimport.keras.layers.core.KerasUnstack;
 import org.deeplearning4j.nn.modelimport.keras.layers.recurrent.KerasLSTM;
 import org.deeplearning4j.nn.modelimport.keras.layers.recurrent.KerasSimpleRnn;
 import org.deeplearning4j.nn.modelimport.keras.utils.KerasLayerUtils;
@@ -189,13 +192,23 @@ public class KerasModel {
      *
      * @param layerConfigs List of Keras layer configurations
      */
+
     Pair<Map<String, KerasLayer>, List<KerasLayer>> prepareLayers(List<Object> layerConfigs)
             throws InvalidKerasConfigurationException, UnsupportedKerasConfigurationException {
+        boolean stacked = false;
         Map<String, KerasLayer> layers = new HashMap<>(); // map from layer name to KerasLayer
         List<KerasLayer> layersOrdered = new ArrayList<>();
-
+        KerasLayer lastLayer = null;
+        int stacks=0;
+        int unstacks=0;
+        int layercounter = 0;
         for (Object layerConfig : layerConfigs) {
             Map<String, Object> layerConfigMap = (Map<String, Object>) layerConfig;
+            Map<String, Object> nextLayerConfigMap = KerasModel.nextLayer(layerConfigs,layercounter+1);
+            ArrayList<Object> nextInboundNodes = null;
+            if(nextLayerConfigMap != null){
+                nextInboundNodes = (ArrayList<Object>) nextLayerConfigMap.get("inbound_nodes");
+            }
             // Append major keras version and backend to each layer config.
             layerConfigMap.put(config.getFieldKerasVersion(), this.kerasMajorVersion);
             if (kerasMajorVersion == 2 && this.kerasBackend != null)
@@ -217,14 +230,89 @@ public class KerasModel {
 
             KerasLayer layer = KerasLayerUtils.getKerasLayerFromConfig(
                     layerConfigMap, this.enforceTrainingConfig, kerasLayerConf, customLayers, lambdaLayers, layers);
+
+
+            // If this layer has two inputs, we need to insert a stackvertex in between so that the layer only receives
+            // one input - We then need to look for other layers further down that also needs two input, this most
+            // probably means the two inputs stacked upstream needs to be unstacked. It also seems that the following
+            // layers also has two inputs so we need to reconfigure all outputs and inputs between stacking
+            // and unstacking
+
+            // 1. First we detect a layer with two or more inputs and the fact that we have not yet stacked
+            // inputs in this model
+            if (layer instanceof KerasDense && layer.inboundLayerNames.size() >1 && !stacked ){
+                //         public GraphBuilder addVertex(String vertexName, GraphVertex vertex, String... vertexInputs) {
+                // name of the previous n layers are now inputs to this inserted stacking layer
+                String name = "stack"+(stacks++);
+                Map<String, Object> newLayerConfigMap = new HashMap(layerConfigMap);
+                newLayerConfigMap.put("name",name);
+                newLayerConfigMap.put("config",new HashMap<String,Object>((Map<String, Object>) layerConfigMap.get("config")));
+                // newLayerConfigMap.put("in",)
+                ((Map<String,Object>)newLayerConfigMap.get("config")).put("name",name);
+                KerasStack insertLayer = new KerasStack(newLayerConfigMap, enforceTrainingConfig);
+                            //.addVertex("stack1", new StackVertex(), "input1","input2","input3")
+                insertLayer.setInboundLayerNames(layer.getInboundLayerNames());
+                layersOrdered.add(insertLayer);
+                layers.put(insertLayer.getLayerName(), insertLayer);
+                List<String> newnames = new ArrayList<String>();
+                newnames.add(name);
+                layer.setInboundLayerNames(newnames);
+                stacked = true;
+            }
+            // 3. We detect a layer with two or more inputs and the fact that we already have stacked the nodes
+            // and that the following layer has ONE input that means that this layer is tailored to combine
+            // two inputs, thus we need to unstack
+            else if (stacked && layer.inboundLayerNames.size() > 1 && nextInboundNodes!=null &&
+                    nextInboundNodes.size()==1 && ((List)nextInboundNodes.get(0)).size()==1){
+                KerasUnstack unstack = null;
+                int totalstacked = layer.inboundLayerNames.size();
+                List<String> unstackNames = new ArrayList<>();
+
+                for(int stacki=0;stacki<totalstacked;stacki++){
+                    String name = "unstack"+unstacks+"_"+stacki;
+                    Map<String, Object> newLayerConfigMap = new HashMap(layerConfigMap);
+                    newLayerConfigMap.put("name",name);
+                    newLayerConfigMap.put("config",new HashMap<String,Object>((Map<String, Object>) layerConfigMap.get("config")));
+                    ((Map<String, Object>)newLayerConfigMap.get("config")).put("name",name);
+
+                    unstack = new KerasUnstack(newLayerConfigMap,
+                            enforceTrainingConfig, stacki,2);
+                    ArrayList<String> names = new ArrayList<String>();
+                    names.add(lastLayer.layerName);
+                    unstack.setInboundLayerNames(names);
+                    layersOrdered.add(unstack);
+                    layers.put(name, unstack);
+                    unstackNames.add(name);
+                }
+                layer.setInboundLayerNames(unstackNames);
+                stacked = false;
+                unstacks ++;
+            }
+            // 2. The inputs are stacked, last layer had two inputs, next layer had two inputs, keep the inputs stacked
+            else if(stacked && layer.inputShape.length > 1){
+                List<String> newnames = new ArrayList<String>();
+                newnames.add(lastLayer.layerName);
+                layer.setInboundLayerNames(newnames);
+            }
+
             layersOrdered.add(layer);
             layers.put(layer.getLayerName(), layer);
             if (layer instanceof KerasLSTM)
                 this.useTruncatedBPTT = this.useTruncatedBPTT || ((KerasLSTM) layer).getUnroll();
             if (layer instanceof KerasSimpleRnn)
                 this.useTruncatedBPTT = this.useTruncatedBPTT || ((KerasSimpleRnn) layer).getUnroll();
+            lastLayer = layer;
+            layercounter++;
         }
         return new Pair<>(layers, layersOrdered);
+    }
+
+    static Map<String, Object> nextLayer(List<Object> layerConfigs, int i){
+        if(layerConfigs.size() < (i+1)){
+            return null;
+        }
+        return (Map<String,Object>)layerConfigs.get(i);
+
     }
 
     Map<String, Object> getOptimizerConfig(Map<String, Object> trainingConfig) throws InvalidKerasConfigurationException{

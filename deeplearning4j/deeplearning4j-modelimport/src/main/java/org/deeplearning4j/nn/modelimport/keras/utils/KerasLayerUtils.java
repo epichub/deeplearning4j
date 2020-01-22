@@ -302,6 +302,10 @@ public class KerasLayerUtils {
             layer = new KerasCropping2D(layerConfig, enforceTrainingConfig);
         } else if (layerClassName.equals(conf.getLAYER_CLASS_NAME_CROPPING_1D())) {
             layer = new KerasCropping1D(layerConfig, enforceTrainingConfig);
+        } else if(layerClassName.equals(conf.getLAYER_CLASS_NAME_LAMBDA())
+                && layerConfig.get("name") != null
+                && layerConfig.get("name").equals("esnn_lambda")){
+            layer = new KerasTwoInputLambda(layerConfig, ElementWiseVertex.Op.Absolute, enforceTrainingConfig);
         } else if (layerClassName.equals(conf.getLAYER_CLASS_NAME_LAMBDA())) {
             String lambdaLayerName = KerasLayerUtils.getLayerNameFromConfig(layerConfig, conf);
             if (!lambdaLayers.containsKey(lambdaLayerName) && !customLayers.containsKey(layerClassName)){
@@ -467,12 +471,14 @@ public class KerasLayerUtils {
     public static List<String> getInboundLayerNamesFromConfig(Map<String, Object> layerConfig, KerasLayerConfiguration conf) {
         List<String> inboundLayerNames = new ArrayList<>();
         if (layerConfig.containsKey(conf.getLAYER_FIELD_INBOUND_NODES())) {
-            List<Object> inboundNodes = (List<Object>) layerConfig.get(conf.getLAYER_FIELD_INBOUND_NODES());
+            List<List<Object>> inboundNodes = (List<List<Object>>) layerConfig.get(conf.getLAYER_FIELD_INBOUND_NODES());
             if (!inboundNodes.isEmpty()) {
-                inboundNodes = (List<Object>) inboundNodes.get(0);
-                for (Object o : inboundNodes) {
-                    String nodeName = (String) ((List<Object>) o).get(0);
-                    inboundLayerNames.add(nodeName);
+                List<List<Object>> inboundNodeList = (List<List<Object>>) inboundNodes;
+                for(List<Object> objectDesc: inboundNodeList) {
+                    for (Object o : objectDesc) {
+                        String nodeName = (String) ((List<Object>) o).get(0);
+                        inboundLayerNames.add(nodeName);
+                    }
                 }
             }
         }

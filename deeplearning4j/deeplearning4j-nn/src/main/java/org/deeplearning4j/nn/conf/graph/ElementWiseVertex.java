@@ -47,7 +47,7 @@ public class ElementWiseVertex extends GraphVertex {
     }
 
     public enum Op {
-        Add, Subtract, Product, Average, Max
+        Add, Subtract, Product, Average, Max, Absolute
     }
 
     protected Op op;
@@ -90,6 +90,8 @@ public class ElementWiseVertex extends GraphVertex {
                 return Integer.MAX_VALUE;
             case Subtract:
                 return 2;
+            case Absolute:
+                return 2;
             default:
                 throw new UnsupportedOperationException("Unknown op: " + op);
         }
@@ -114,6 +116,9 @@ public class ElementWiseVertex extends GraphVertex {
                 break;
             case Max:
                 op = org.deeplearning4j.nn.graph.vertex.impl.ElementWiseVertex.Op.Max;
+                break;
+            case Absolute:
+                op = org.deeplearning4j.nn.graph.vertex.impl.ElementWiseVertex.Op.Absolute;
                 break;
             default:
                 throw new RuntimeException();

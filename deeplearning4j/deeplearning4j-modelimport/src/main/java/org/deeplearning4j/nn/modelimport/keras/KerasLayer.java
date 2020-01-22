@@ -20,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.deeplearning4j.nn.conf.InputPreProcessor;
 import org.deeplearning4j.nn.conf.graph.GraphVertex;
+import org.deeplearning4j.nn.conf.graph.StackVertex;
 import org.deeplearning4j.nn.conf.inputs.InputType;
 import org.deeplearning4j.nn.conf.layers.FeedForwardLayer;
 import org.deeplearning4j.nn.conf.layers.Layer;
@@ -435,7 +436,8 @@ public class KerasLayer {
     public InputPreProcessor getInputPreprocessor(InputType... inputType) throws InvalidKerasConfigurationException {
         InputPreProcessor preprocessor = null;
         if (this.layer != null) {
-            if (inputType.length > 1)
+            boolean stackvertex = (this.vertex != null && this.vertex instanceof StackVertex);
+            if (inputType.length > 1 && !stackvertex)
                 throw new InvalidKerasConfigurationException(
                         "Keras layer of type \"" + this.className + "\" accepts only one input");
             preprocessor = this.layer.getPreProcessorForInputType(inputType[0]);

@@ -20,14 +20,19 @@ import lombok.extern.slf4j.Slf4j;
 import lombok.val;
 import org.deeplearning4j.nn.conf.ComputationGraphConfiguration;
 import org.deeplearning4j.nn.conf.MultiLayerConfiguration;
+import org.deeplearning4j.nn.conf.inputs.InputType;
+import org.deeplearning4j.nn.conf.layers.samediff.SameDiffLambdaLayer;
 import org.deeplearning4j.nn.graph.ComputationGraph;
 import org.deeplearning4j.nn.modelimport.keras.BaseDL4JTest;
 import org.deeplearning4j.nn.modelimport.keras.KerasLayer;
 import org.deeplearning4j.nn.modelimport.keras.KerasModel;
 import org.deeplearning4j.nn.modelimport.keras.KerasModelImport;
 import org.deeplearning4j.nn.modelimport.keras.layers.convolutional.KerasSpaceToDepth;
+import org.deeplearning4j.nn.modelimport.keras.layers.core.KerasTwoInputLambda;
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork;
 import org.junit.Test;
+import org.nd4j.autodiff.samediff.SDVariable;
+import org.nd4j.autodiff.samediff.SameDiff;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.factory.Nd4j;
 import org.nd4j.resources.Resources;
@@ -66,6 +71,24 @@ public class Keras2ModelConfigurationTest extends BaseDL4JTest {
     @Test
     public void simple222ConfigTest() throws Exception {
         runSequentialConfigTest("modelimport/keras/configs/keras2/model_2_2_2.json");
+    }
+
+
+    public class MyLambdaDiff extends SameDiffLambdaLayer {
+        @Override
+        public SDVariable defineLayer(SameDiff sd, SDVariable x) {
+            return x.add(2);
+        }
+
+        @Override
+        public InputType getOutputType(int layerIndex, InputType inputType) { return inputType; }
+    }
+
+    @Test
+    public void esnnConfigTest() throws Exception {
+        SameDiffLambdaLayer lambdaLayer;
+        KerasLayer.registerLambdaLayer("esnn_lambda", new MyLambdaDiff());
+        runModelConfigTest("modelimport/keras/configs/keras2/esnn.json");
     }
 
     @Test
@@ -213,7 +236,7 @@ public class Keras2ModelConfigurationTest extends BaseDL4JTest {
 
 
     @Test
-    public void simpleAddLayerTest() throws Exception {
+    public void simpleAddLayerTest() throws Exception { // this test does test a merge layer!..
         runModelConfigTest("modelimport/keras/configs/keras2/simple_add_tf_keras_2.json");
     }
 

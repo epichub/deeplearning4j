@@ -31,6 +31,7 @@ import org.nd4j.linalg.api.ops.impl.broadcast.BroadcastTo;
 import org.nd4j.linalg.api.ops.impl.transforms.bool.MatchConditionTransform;
 import org.nd4j.linalg.api.ops.impl.transforms.pairwise.arithmetic.SubOp;
 import org.nd4j.linalg.api.ops.impl.transforms.pairwise.bool.Or;
+import org.nd4j.linalg.api.ops.impl.transforms.same.Abs;
 import org.nd4j.linalg.api.shape.Shape;
 import org.nd4j.linalg.factory.Nd4j;
 import org.nd4j.linalg.indexing.conditions.Conditions;
@@ -50,7 +51,7 @@ import java.util.Arrays;
 public class ElementWiseVertex extends BaseGraphVertex {
 
     public enum Op {
-        Add, Subtract, Product, Average, Max
+        Add, Subtract, Product, Average, Max, Absolute
     }
 
     private Op op;
@@ -102,7 +103,7 @@ public class ElementWiseVertex extends BaseGraphVertex {
                 outShape = Shape.broadcastOutputShape(outShape, inputs[i].shape());
             }
         }
-
+        System.out.println("bleepbloop1");
         switch (op) {
             case Add:
                 INDArray sum =  workspaceMgr.createUninitialized(ArrayType.ACTIVATIONS, dataType, outShape);
@@ -172,7 +173,15 @@ public class ElementWiseVertex extends BaseGraphVertex {
                         return workspaceMgr.leverageTo(ArrayType.ACTIVATIONS, max);
                     }
                 }
-
+            case Absolute:
+                if (inputs.length != 2)
+                    throw new IllegalArgumentException("ElementWise subtraction only supports 2 inputs");
+                // first we substract x
+                INDArray subtracted =  Nd4j.exec(new SubOp(inputs, new INDArray[]{workspaceMgr.createUninitialized(ArrayType.ACTIVATIONS, inputs[0].dataType(), outShape)}))[0];
+                // then we make the result positive
+                INDArray max = Transforms.abs(subtracted, true);
+                System.out.println("bleepbloop");
+                return workspaceMgr.leverageTo(ArrayType.ACTIVATIONS, max);
             default:
                 throw new UnsupportedOperationException("Unknown op: " + this.op);
         }
